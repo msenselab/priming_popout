@@ -16,18 +16,17 @@ exp_pars_pos$type <- "p"
 exp_pars_pos$d_col <- 0
 exp_pars <- rbind(exp_pars_col, exp_pars_resp, exp_pars_pos)
 
-exp_pars <- filter(exp_pars, sub %in% 
-                     c("02", "03", "04", "05", "06", "08", "09", "12", "13", "14", "15", "16", "18", "19"))
-
 exp_pars$later_diffusion <- factor(exp_pars$later_diffusion, levels=0:1, labels=c("DDM", "LATER"))
-exp_pars$resp_update <- factor(exp_pars$resp_update, levels=0:13, labels=c("No update", "PI approx. Bayesian S0", "PI Bayesian S0", "PD Bayesian S0", 
+exp_pars$resp_update <- factor(exp_pars$resp_update, levels=0:14, labels=c("No update", "PI approx. Bayesian S0", "PI Bayesian S0", "PD Bayesian S0", 
                                                                            "PG Bayesian S0", "PI binary rate", "PI step rate", 
                                                                            "PI weighted rate", "PD approx. Bayesian S0", "PG approx. Bayesian S0",
-                                                                           "PI binary NDT", "PI weighted NDT", "PD step NDT", "PG step NDT"))
+                                                                           "PI binary NDT", "PI weighted NDT", "PD step NDT", "PG step NDT", 
+                                                                           "PS Bayesian S0"))
 exp_pars$col_update <- factor(exp_pars$col_update, levels=0:7, labels=c("No update", "PI binary rate", "PI step rate", "PI weighted rate", "PI binary NDT", 
                                                                         "PI weighted NDT", "PD weighted rate", "PG weighted rate"))
-exp_pars$pos_update <- factor(exp_pars$pos_update, levels=0:7, labels=c("No update", "Binary rate", "Step rate", "Weighted rate", "Weighted rate with DI",
-                                                                        "Binary NDT", "Weighted NDT", "Weighted NDT with DI"))
+exp_pars$pos_update <- factor(exp_pars$pos_update, levels=0:9, labels=c("No update", "Binary rate", "Step rate", "Weighted rate", "Weighted rate with DI",
+                                                                        "Binary NDT", "Weighted NDT", "Weighted NDT with DI", "Matched weighted rate",
+                                                                        "Matched weighted NDT"))
 
 exp_pars <- unite(exp_pars, sub_session, sub, session)
 
@@ -37,7 +36,7 @@ group_by(exp_pars, model) %>% summarize(mAIC=mean(as.numeric(AIC)), mBIC=mean(as
 
 # Create lists of best and worst models based on total AIC
 model_list[1:5,] -> top5_models
-model_list[104:108,] -> bottom5_models
+model_list[(nrow(model_list)-4):nrow(model_list),] -> bottom5_models
 top_model <- top5_models$model[1]
 filter(exp_pars, model==top_model, type=="c") %>% select(sub_session, AIC) -> best_models
 names(best_models)[2] <- "topAIC"
@@ -49,7 +48,8 @@ model_params$col_update <- as.numeric(model_params$col_update)-1
 model_params$pos_update <- as.numeric(model_params$pos_update)-1
 
 # Reorder factor levels
-exp_pars$resp_update <- factor(exp_pars$resp_update, levels(exp_pars$resp_update)[c(1:3, 6:8, 11:12, 9:10, 4:5, 13:14)])
+exp_pars$resp_update <- factor(exp_pars$resp_update, levels(exp_pars$resp_update)[c(1:3, 6:8, 11:12, 9:10, 4:5, 15, 13:14)])
+exp_pars$pos_update <- factor(exp_pars$pos_update, levels(exp_pars$pos_update)[c(1:5, 9, 6:8, 10)])
 
 # Top lists based on number of participants for which a model is the best fitting one in terms of AIC
 topmod = list()
@@ -77,14 +77,14 @@ for (i in 1:28) { dplyr::filter(exp_pars, sub_session==subs[i]) %>% arrange(AIC)
 }
 
 # Look at which proportion of second best models are of the same type 
-prop_rate_rate <- filter(best_pos_mods, topmod<5) %>% summarize(mean(second<5)) 
-prop_NDT_NDT <- filter(best_pos_mods, topmod>=5) %>% summarize(mean(second >=5))
+prop_rate_rate <- filter(best_pos_mods, topmod<=5) %>% summarize(mean(second<=5)) 
+prop_NDT_NDT <- filter(best_pos_mods, topmod>5) %>% summarize(mean(second >5))
 
 # Approximate Bayesian rules
 approx_bayes <- c('PI approx. Bayesian S0', 'PD approx. Bayesian S0', 'PG approx. Bayesian S0')
 
 cols <- c("S0" = "skyblue2", "Rate" = "orange", "NDT" = "seagreen3")
-bgcol <- data.frame(xmin=c(1.5,2.5,5.5,7.5,9.5),xmax=c(2.5,5.5,7.5,9.5,11.5), 
+bgcol <- data.frame(xmin=c(1.5,2.5,5.5,7.5,10.5),xmax=c(2.5,5.5,7.5,10.5,12.5), 
                     Type=c("S0", "Rate", "NDT", "S0", "NDT"), ymin=-5, ymax=70)
 fig_resp_aic <- filter(exp_pars, type=="r", !(resp_update %in% approx_bayes)) %>%
   separate(sub_session, c("sub", "session")) %>%
@@ -119,7 +119,7 @@ if(exists("savefigures") && savefigures==TRUE) {
   ggsave('figures/col_aic.png', fig_col_aic, width = 7, height = 3.5)
 }
 
-bgcol <- data.frame(xmin=c(1.5,5.5),xmax=c(5.5,8.5), 
+bgcol <- data.frame(xmin=c(1.5,6.5),xmax=c(6.5,10.5), 
                     Type=c("Rate", "NDT"), ymin=-5, ymax=55)
 fig_pos_aic <- filter(exp_pars, type=="p") %>% separate(sub_session, c("sub", "session")) %>%
   group_by(pos_update, later_diffusion, sub) %>% summarize(rAIC=mean(rAIC)) %>%
@@ -145,21 +145,6 @@ for(s in subs) {
   dp <- genSeq(dplyr::filter(model_params, sub_session==s), dplyr::filter(data, sub_session==s))
   dp$tno <- 1:nrow(dp)
   data_pred <- full_join(data_pred, dp)
-}
-
-group_by(data_pred, sub_session) %>% dplyr::filter(error=="no", tposprime!="NA") %>% 
-  group_by(sub_session, tposprime, tcolprime, toriprime) %>% summarize(mRT=mean(rt), mpRT=mean(predRT)) -> data_pred_summary
-
-data_vs_pred_plot <- ggplot(data_pred_summary, aes(x = mRT, y = mpRT)) +
-  geom_point(size=1) + 
-  geom_abline(color="gray40", size=1) +  
-  labs(x="measured mean RT", y="predicted mean RT") +
-  coord_fixed() +
-  scale_x_log10(breaks = seq(0.4,1, by=0.1)) + 
-  scale_y_log10(breaks = seq(0.4,1, by=0.1)) + theme_bw()
-
-if(exists("savefigures") && savefigures==TRUE) {
-  ggsave('figures/data_vs_pred.png', data_vs_pred_plot, width = 8, height = 6)
 }
 
 # Plot examples of starting point and rate updating
@@ -343,7 +328,7 @@ if(exists("savefigures") && savefigures==TRUE) {
 # ---- Updating_examples  ----
 
 # Example of color-based updating
-ex_sub <- "15_A"
+ex_sub <- "11_A"
 l <- updateColDemo(filter(data_pred, sub_session==ex_sub, tno %in% 1:8), 
                    filter(exp_pars, sub_session==ex_sub, model==top_model, type=="p"))
 
@@ -375,32 +360,3 @@ if(exists("savefigures") && savefigures==TRUE) {
   ggsave('figures/resp_update.png', fig_resp_update, width = 8, height = 8)
 }
 
-
-# Make some figures for illustrating DDM + LATER
-
-set.seed(92)
-t <- seq(0,0.53,0.01)
-y_ddm <- c(0, cumsum(rnorm(53))+20*t[1:53])
-y_l <- seq(0, 10.32, length.out=length(t)) 
-x_poly <- c(0, max(t)-0.2, max(t)+0.34)
-y_poly <- c(0, max(y_l), max(y_l))
-d <- data.frame(t=t, y_ddm=y_ddm, y_l=y_l)
-poly <- data.frame(x=x_poly, y=y_poly)
-DDM_plot <- ggplot(d, aes(x=t, y=y_ddm)) + geom_line(color="blue", size=1.2) + geom_line(color="red", aes(x=t, y=y_l), size=1.2) + 
-  geom_polygon(data=poly, aes(x=x, y=y), linetype=0, fill="red", alpha=0.15) + theme_void() + geom_hline(yintercept=10.32) + geom_hline(yintercept=-10.32) + 
-  geom_hline(yintercept=0, linetype=2) + coord_cartesian(xlim=c(-0.1,0.8))
-
-example_pars <- filter(exp_pars, sub_session=="02_A") %>% filter(model %in% c("LR4C3P4","DR4C3P4"), type=="c")
-rter <- filter(example_pars, later_diffusion=="LATER")$ter
-dter <- filter(example_pars, later_diffusion=="DDM")$ter
-rsig <- filter(example_pars, later_diffusion=="LATER")$sig
-dsig <- filter(example_pars, later_diffusion=="DDM")$sig
-rtheta <- filter(example_pars, later_diffusion=="LATER")$theta
-dtheta <- filter(example_pars, later_diffusion=="DDM")$theta
-rmu <- filter(example_pars, later_diffusion=="LATER")$mu
-dmu <- filter(example_pars, later_diffusion=="DDM")$mu
-
-distributions_plot <- data.frame(rt=rt, r=drecinorm(rt-rter,rmu/rtheta,rsig/rtheta), 
-                                 d=ddiffusion(rt, dtheta/dsig,dter,dmu/dsig)) %>% 
-  gather(type,dist,r,d) %>% ggplot(aes(x=rt, y=dist, color=type, group=type)) +
-  geom_line(size=2) + theme_void() + scale_color_manual(values=c("d"="blue", "r"="red"))

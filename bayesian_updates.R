@@ -180,6 +180,47 @@ updatePosPrior <- function(targets, tpos, a = 1, b = 1, m = 0.5, d=0.5, multi=0)
   return(mu[1:length(targets)])
 }
 
+#' @param targets An array indicate target or non-target. It must be 0,1 or FALSE, TRUE
+#' @param a Beta distribution parameter a
+#' @param b Beta distribution parameter b
+#' @param m memory component. When m = 0, no updating, i.e., complete ignore prior history. 
+updatePosPriorSpread <- function(targets, tpos, a = 1, b = 1, m = 0.5, d=0.5) {
+  x <- seq(0,1,0.001)
+  p0 <- dbeta(x,a,b)
+  p0 <- ifelse(p0==Inf, 20, p0) # replace Inf with 20 (this happens for Jeffrey prior)  
+  p0 <- matrix(rep(p0,each=8),8,length(x))
+  pd <- p0
+  mu = rep(a/(a+b),length(targets)+1)
+  idx = 2
+  
+  w <- function(x) {
+    return(dnorm(x,0,d*4))
+  }
+  
+  for(target in targets) {
+    # Update the distribution based on the Bernoulli likelihood 
+    pd[tpos[idx-1],] <- pd[tpos[idx-1],]*x*target + (1-x)*pd[tpos[idx-1],]*(1-target)
+    
+    # Implement 'forgetting'
+    pd <- (1-m)*p0 + m * pd
+    # Normalize the probability distribution
+    pd <- pd/rowMeans(pd)
+    mu[idx] <- mean(pd[tpos[idx],]*x)
+    
+    # Implement 'spreading'
+    pd_old <- pd 
+    for(ind in 1:8) {
+      pd[ind,]<-(pd_old[ind,]*w(0) + pd_old[(ind+1-1) %% 8 + 1,]*w(1)+pd_old[(ind-1-1) %% 8 + 1,]*w(1)+
+                   pd_old[(ind+2-1) %% 8 + 1,]*w(2)+pd_old[(ind-2-1) %% 8 + 1,]*w(2)+
+                   pd_old[(ind+3-1) %% 8 + 1,]*w(3)+pd_old[(ind-3-1) %% 8 + 1,]*w(3)+
+                   pd_old[(ind+4-1) %% 8 + 1,]*w(4))/(w(0)+2*w(1)+2*w(2)+2*w(3)+w(4))
+    }
+    idx  = idx + 1
+  }
+  # return priors
+  return(mu[1:length(targets)])
+}
+
 #' prior update - non-bayesian approach
 #' @param targets An array indicate target or non-target. It must be 0,1 or FALSE, TRUE
 #' @param m memory component. When m = 0, no updating, i.e., complete ignore prior history. 
@@ -302,6 +343,18 @@ updateRateWeightPositionDist <- function(tarpos, distpos, mem, delta_tar, delta_
   return(s)
 }
 
+updateRateWeightPositionMatch <- function(tarpos, distpos, mem, delta) {
+  ds = matrix(rep(0, length(tarpos)*8), length(tarpos), 8)
+  s = rep(1, length(tarpos))
+  for (i in 2:length(tarpos)) {
+    ds[i, tarpos[i-1]] <- ds[i-1, tarpos[i-1]] + delta
+    ds[i, distpos[,i-1]] <- ds[i, distpos[,i-1]] - delta/3
+    ds[i, ] <- ds[i, ] * mem
+    s[i] <- s[i] + ds[i, tarpos[i]]
+  }
+  return(s)
+}
+
 updateNDTWeight <- function(dim, mem = 0.5, delta=0.02){
   dim <- 2*(dim-0.5)   
   ds = rep(0, length(dim))
@@ -334,6 +387,18 @@ updateNDTPositionDist <- function(tarpos, distpos, mem, delta_tar, delta_dist) {
     ds[i, -tarpos[i-1]] <- ds[i-1, -tarpos[i-1]] + delta_tar/7
     ds[i, distpos[,i-1]] <- ds[i, distpos[,i-1]] + delta_dist/3
     ds[i, -distpos[,i-1]] <- ds[i, -distpos[,i-1]] - delta_dist/5
+    ds[i, ] <- ds[i, ] * mem
+    s[i] <- ds[i, tarpos[i]]
+  }
+  return(s)
+}
+
+updateNDTPositionMatch <- function(tarpos, distpos, mem, delta) {
+  ds = matrix(rep(0, length(tarpos)*8), length(tarpos), 8)
+  s = rep(0, length(tarpos))
+  for (i in 2:length(tarpos)) {
+    ds[i, tarpos[i-1]] <- ds[i-1, tarpos[i-1]] - delta
+    ds[i, distpos[,i-1]] <- ds[i, distpos[,i-1]] + delta/3
     ds[i, ] <- ds[i, ] * mem
     s[i] <- ds[i, tarpos[i]]
   }
@@ -470,7 +535,8 @@ findParameters <- function(par1, data, fixed, op = TRUE) {
              data$inttrial_resp[!is.na(data$inttrial_resp)]*x[['delta_ndt_resp']], # 10: NDT binary
            data$ndt <- data$ndt + updateNDTWeight(data$tori == "top", mem = x[["m_ndt_resp"]], delta = x[["delta_ndt_resp"]]), # 11: weighted NDT
            data$ndt <- data$ndt + updatePosNDT(data$tori == "top", tpos=data$tpos, delta = x[["delta_ndt_resp"]], m = x[["m_ndt_resp"]], multi=0), # 12 Position linked NDT updating
-           data$ndt <- data$ndt + updatePosNDT(data$tori == "top", tpos=data$tpos, delta = x[["delta_ndt_resp"]], m = x[["m_ndt_resp"]], d=x[['d_resp']], multi=1) # 13 Multiple position linked NDT updating
+           data$ndt <- data$ndt + updatePosNDT(data$tori == "top", tpos=data$tpos, delta = x[["delta_ndt_resp"]], m = x[["m_ndt_resp"]], d=x[['d_resp']], multi=1), # 13 Multiple position linked NDT updating
+           data$beta <- updatePosPriorSpread(data$tori == "top", tpos=data$tpos, a = x[["beta_resp"]], b=x[["beta_resp"]], m = x[["mem_resp"]], d = x[["d_resp"]]) # 14: Multiple position linked S0 updating with forgetting and spreading
     )
     # Color based updating
     switch(x['col_update'], # If 0 do nothing
@@ -480,8 +546,8 @@ findParameters <- function(par1, data, fixed, op = TRUE) {
            data$ndt[!is.na(data$inttrial_col)] <- data$ndt[!is.na(data$inttrial_col)] -
              data$inttrial_col[!is.na(data$inttrial_col)]*x[['delta_ndt_col']], # 4: NDT binary
            data$ndt <- data$ndt + updateNDTWeight(as.numeric(data$tcol=="red"), mem = x[["m_ndt_col"]], delta = x[["delta_ndt_col"]]), # 5: weighted NDT 
-           data$scale <- data$scale*updatePosRateWeight(data$tpos, as.numeric(data$tcol), mem=x["u_mem_col"], delta=x["u_delta_col"]), # 6: Position-linked weighted NDT 
-           data$scale <- data$scale*updatePosRateWeight(data$tpos, as.numeric(data$tcol), mem=x["u_mem_col"], delta=x["u_delta_col"], d=x[['d_col']], multi=1) # 7: Position-linked weighted NDT 
+           data$scale <- data$scale*updatePosRateWeight(data$tpos, as.numeric(data$tcol), mem=x["u_mem_col"], delta=x["u_delta_col"]), # 6: Position-linked weighted rate 
+           data$scale <- data$scale*updatePosRateWeight(data$tpos, as.numeric(data$tcol), mem=x["u_mem_col"], delta=x["u_delta_col"], d=x[['d_col']], multi=1) # 7: Position-linked weighted rate 
     )
     # Position based updating
     switch(x['pos_update'], # If 0 do nothing
@@ -492,7 +558,9 @@ findParameters <- function(par1, data, fixed, op = TRUE) {
            data$ndt[!is.na(data$inttrial_pos)] <- data$ndt[!is.na(data$inttrial_pos)] -
              data$inttrial_pos[!is.na(data$inttrial_pos)]*x[['delta_ndt_pos']], # 5: NDT binary
            data$ndt <- data$ndt + updateNDTPosition(as.numeric(data$tpos), mem = x[["m_ndt_pos"]], delta = x[["delta_ndt_pos"]]), # 6: position based NDT weighting
-           data$ndt <- data$ndt + updateNDTPositionDist(as.numeric(data$tpos), distpos, mem = x[["m_ndt_pos"]], delta_tar = x[["delta_ndt_pos"]], delta_dist = x[["delta_ndt_pos_dist"]]) # 7: position based NDT weighting with distractor inhibition
+           data$ndt <- data$ndt + updateNDTPositionDist(as.numeric(data$tpos), distpos, mem = x[["m_ndt_pos"]], delta_tar = x[["delta_ndt_pos"]], delta_dist = x[["delta_ndt_pos_dist"]]), # 7: position based NDT weighting with distractor inhibition
+           data$scale <- data$scale*updateRateWeightPositionMatch(as.numeric(data$tpos), distpos, mem=x[["u_mem_pos"]], delta = x[["u_delta_pos"]]), # 8: position based DR weighting with matched distractor inhibition 
+           data$ndt <- data$ndt + updateNDTPositionMatch(as.numeric(data$tpos), distpos, mem = x[["m_ndt_pos"]], delta = x[["delta_ndt_pos"]]) # 9: position based NDT weighting with matched distractor inhibition
     )
     
     # later or diffusion
@@ -571,7 +639,7 @@ genSeq <- function(x, data) {
          data$beta <- updatePrior(data$tori == "top", a = x[["beta_resp"]], b=x[["beta_resp"]], m = x[["mem_resp"]]), # 2: Bayesian S0 updating with forgetting
          data$beta <- updatePosPrior(data$tori == "top", tpos=data$tpos, a = x[["beta_resp"]], b=x[["beta_resp"]], m = x[["mem_resp"]], multi=0), # 3: Position linked S0 updating with forgetting
          data$beta <- updatePosPrior(data$tori == "top", tpos=data$tpos, a = x[["beta_resp"]], b=x[["beta_resp"]], m = x[["mem_resp"]], d = x[["d_resp"]], multi=1), # 4: Multiple position linked S0 updating with forgetting
-         data$scale <- updateRate(data$inttrial_resp, sc=x["scale_resp"]), # 5: single trial back switch cost on DR
+         data$scale <- updateRate(data$inttrial_resp, sc=x[["scale_resp"]]), # 5: single trial back switch cost on DR
          data$scale <- updateRateMem(data$inttrial_resp, mem=x[["u_mem_resp"]], delta=x[["u_delta_resp"]]), # 6: switch cost on DR with longer memory
          data$scale <- updateRateWeight(as.numeric(data$tori == "top")+1, mem=x[["u_mem_resp"]], delta=x[["u_delta_resp"]]), # 7 response based DR weighting 
          data$beta <- updatePosS0(data$tori == "top", tpos=data$tpos, delta = x[["u_delta_resp"]], m = x[["u_mem_resp"]], multi=0), # 8 Position linked direct S0 updating with forgetting
@@ -580,7 +648,8 @@ genSeq <- function(x, data) {
            data$inttrial_resp[!is.na(data$inttrial_resp)]*x[['delta_ndt_resp']], # 10: NDT binary
          data$ndt <- data$ndt + updateNDTWeight(data$tori == "top", mem = x[["m_ndt_resp"]], delta = x[["delta_ndt_resp"]]), # 11: weighted NDT
          data$ndt <- data$ndt + updatePosNDT(data$tori == "top", tpos=data$tpos, delta = x[["delta_ndt_resp"]], m = x[["m_ndt_resp"]], multi=0), # 12 Position linked NDT updating
-         data$ndt <- data$ndt + updatePosNDT(data$tori == "top", tpos=data$tpos, delta = x[["delta_ndt_resp"]], m = x[["m_ndt_resp"]], d=x[['d_resp']], multi=1) # 13 Multiple position linked NDT updating
+         data$ndt <- data$ndt + updatePosNDT(data$tori == "top", tpos=data$tpos, delta = x[["delta_ndt_resp"]], m = x[["m_ndt_resp"]], d=x[['d_resp']], multi=1), # 13 Multiple position linked NDT updating
+         data$beta <- updatePosPriorSpread(data$tori == "top", tpos=data$tpos, a = x[["beta_resp"]], b=x[["beta_resp"]], m = x[["mem_resp"]], d = x[["d_resp"]]) # 14: Multiple position linked S0 updating with forgetting and spreading
   )
   # Color based updating
   switch(x[['col_update']], # If 0 do nothing
@@ -590,8 +659,8 @@ genSeq <- function(x, data) {
          data$ndt[!is.na(data$inttrial_col)] <- data$ndt[!is.na(data$inttrial_col)] - 
            data$inttrial_col[!is.na(data$inttrial_col)]*x[['delta_ndt_col']], # 4: NDT binary
          data$ndt <- data$ndt + updateNDTWeight(as.numeric(data$tcol=="red"), mem = x[["m_ndt_col"]], delta = x[["delta_ndt_col"]]), # 5: weighted NDT 
-         data$scale <- data$scale*updatePosRateWeight(data$tpos, as.numeric(data$tcol), mem=x["u_mem_col"], delta=x["u_delta_col"]), # 6: Position-linked weighted NDT 
-         data$scale <- data$scale*updatePosRateWeight(data$tpos, as.numeric(data$tcol), mem=x["u_mem_col"], delta=x["u_delta_col"], d=x[['d_col']], multi=1) # 7: Position-linked weighted NDT 
+         data$scale <- data$scale*updatePosRateWeight(data$tpos, as.numeric(data$tcol), mem=x[["u_mem_col"]], delta=x[["u_delta_col"]]), # 6: Position-linked weighted rate 
+         data$scale <- data$scale*updatePosRateWeight(data$tpos, as.numeric(data$tcol), mem=x[["u_mem_col"]], delta=x[["u_delta_col"]], d=x[['d_col']], multi=1) # 7: Position-linked weighted rate 
   )
   # Position based updating
   switch(x[['pos_update']], # If 0 do nothing
@@ -602,7 +671,9 @@ genSeq <- function(x, data) {
          data$ndt[!is.na(data$inttrial_pos)] <- data$ndt[!is.na(data$inttrial_pos)] -
            data$inttrial_pos[!is.na(data$inttrial_pos)]*x[['delta_ndt_pos']], # 5: NDT binary
          data$ndt <- data$ndt + updateNDTPosition(as.numeric(data$tpos), mem = x[["m_ndt_pos"]], delta = x[["delta_ndt_pos"]]), # 6: position based NDT weighting
-         data$ndt <- data$ndt + updateNDTPositionDist(as.numeric(data$tpos), distpos, mem = x[["m_ndt_pos"]], delta_tar = x[["delta_ndt_pos"]], delta_dist = x[["delta_ndt_pos_dist"]]) # 7: position based NDT weighting with distractor inhibition
+         data$ndt <- data$ndt + updateNDTPositionDist(as.numeric(data$tpos), distpos, mem = x[["m_ndt_pos"]], delta_tar = x[["delta_ndt_pos"]], delta_dist = x[["delta_ndt_pos_dist"]]), # 7: position based NDT weighting with distractor inhibition
+         data$scale <- data$scale*updateRateWeightPositionMatch(as.numeric(data$tpos), distpos, mem=x[["u_mem_pos"]], delta=x[["u_delta_pos"]]), # 8: position based DR weighting with matched distractor inhibition 
+         data$ndt <- data$ndt + updateNDTPositionMatch(as.numeric(data$tpos), distpos, mem = x[["m_ndt_pos"]], delta = x[["delta_ndt_pos"]]) # 9: position based NDT weighting with matched distractor inhibition
   )
   data$rate <- x$mu*data$scale
   data$theta <- x$theta
@@ -613,12 +684,13 @@ genSeq <- function(x, data) {
   delta <- data$theta - data$s0
   sigma <- data$sigma
   mu <- data$rate 
+  ter <- data$ndt
   predRT <- rep(0, nrow(data))
   for(n in 1:nrow(data)) {
     if(x$later_diffusion=="LATER") {
-      dist <- drecinorm(t-x$ter, mu[n]/delta[n], sigma[n]/delta[n])
+      dist <- drecinorm(t-ter[n], mu[n]/delta[n], sigma[n]/delta[n])
     } else {
-      dist <- ddiffusion(t, delta[n]/sigma[n], x$ter, mu[n]/sigma[n])
+      dist <- ddiffusion(t, delta[n]/sigma[n], ter[n], mu[n]/sigma[n])
     }
     predRT[n] <- mean(t*dist, na.rm=TRUE)/mean(dist, na.rm=TRUE)
   }
@@ -731,6 +803,10 @@ fitPar <- function(sub, modelname = 'LR0C0P0') {
          'RD' = { # response based NDT weighting 
            fixed[c('mem_resp','beta_resp', 'd_resp', 'scale_resp','u_mem_resp','u_delta_resp',
                    'm_ndt_resp','delta_ndt_resp','resp_update')] <- c(0, 1, NA, 1, 0, 0, NA, NA, 13)
+         },
+         'RE' = { # Bayesian S0 updating with forgetting
+           fixed[c('mem_resp','beta_resp', 'd_resp', 'scale_resp','u_mem_resp','u_delta_resp',
+                   'm_ndt_resp','delta_ndt_resp','resp_update')] <- c(NA, NA, NA, 1, 0, 0, 0, 0, 14)
          }
   )
   
@@ -813,6 +889,16 @@ fitPar <- function(sub, modelname = 'LR0C0P0') {
            fixed[c('mem_pos','beta_pos','scale_pos','u_mem_pos','u_delta_pos','u_delta_pos_dist',
                    'm_ndt_pos','delta_ndt_pos','delta_ndt_pos_dist','pos_update')] <- 
              c(0, 1, 1, 0, 0, 0, NA, NA, NA, 7)
+         }, 
+         'P8' = { # dimension based DR weighting 
+           fixed[c('mem_pos','beta_pos','scale_pos','u_mem_pos','u_delta_pos','u_delta_pos_dist',
+                   'm_ndt_pos','delta_ndt_pos','delta_ndt_pos_dist','pos_update')] <-
+             c(0, 1, 1, NA, NA, 0, 0, 0, 0, 8)
+         }, 
+         'P9' = { # dimension based DR weighting 
+           fixed[c('mem_pos','beta_pos','scale_pos','u_mem_pos','u_delta_pos','u_delta_pos_dist',
+                   'm_ndt_pos','delta_ndt_pos','delta_ndt_pos_dist','pos_update')] <-
+             c(0, 1, 1, 0, 0, 0, NA, NA, 0, 9)
          }
   )
   
@@ -864,7 +950,8 @@ parEstimate <- function(lsubs, modelnames){
                       'fitPar','drecinorm','updatePriorA','updatePrior','logll','log_ddiffusion','updateS0',
                       'updatePosPrior',  'updateRateWeightPosition',  'updateRateWeightPositionDist', 
                       "updatePosS0", "updateNDTWeight", "updateNDTPosition", "updateNDTPositionDist", 
-                      "updatePosNDT","updatePosRateWeight"))
+                      "updatePosNDT","updatePosRateWeight", "updateRateWeightPositionMatch",
+                      "updateNDTPositionMatch", "updatePosPriorSpread"))
   
   t0 = proc.time()
   paras <- clusterMap(cl, fitPar, lsubs, modelnames)

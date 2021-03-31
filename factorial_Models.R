@@ -4,7 +4,7 @@ source('bayesian_updates.R')
 
 # prepare possible models 
 models <- c("L", "D")
-resp_update_pars <- c("R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "RA", "RB", "RC", "RD")
+resp_update_pars <- c("R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "RA", "RB", "RC", "RD", "RE")
 color_update_pars <- c("C0")
 position_update_pars <- c("P0")
 
@@ -60,7 +60,7 @@ saveRDS(pars.df, file = './data/fitpars_col.rds')
 
 resp_update_pars <- c("R0")
 color_update_pars <- c("C0")
-position_update_pars <- c("P0", "P1", "P2", "P3", "P4", "P5", "P6", 'P7')
+position_update_pars <- c("P0", "P1", "P2", "P3", "P4", "P5", "P6", 'P7', 'P8', 'P9')
 
 modelnames <- apply(expand.grid(apply(expand.grid(apply(expand.grid(models, resp_update_pars), 1, paste, collapse=""),
                                                   color_update_pars), 1, paste, collapse=""), position_update_pars), 1, paste, collapse="")
@@ -83,7 +83,7 @@ saveRDS(pars.df, file = './data/fitpars_pos.rds')
 
 
 # Now run each comparison again with the other factor levels set to the winner for that factor
-resp_update_pars <- c("R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "RA", "RB", "RC", "RD")
+resp_update_pars <- c("R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "RA", "RB", "RC", "RD", "RE")
 color_update_pars <- c("C3")
 position_update_pars <- c("P7")
 
@@ -129,7 +129,7 @@ saveRDS(pars.df, file = './data/fitpars_opt_col.rds')
 # Now run each comparison again with the other factor levels set to the winner for that factor
 resp_update_pars <- c("R4")
 color_update_pars <- c("C3")
-position_update_pars <- c("P0", "P1", "P2", "P3", "P4", "P5", "P6", 'P7')
+position_update_pars <- c("P0", "P1", "P2", "P3", "P4", "P5", "P6", 'P7', 'P8', 'P9')
 
 modelnames <- apply(expand.grid(apply(expand.grid(apply(expand.grid(models, resp_update_pars), 1, paste, collapse=""),
                                                   color_update_pars), 1, paste, collapse=""), position_update_pars), 1, paste, collapse="")
@@ -153,7 +153,7 @@ saveRDS(pars.df, file = './data/fitpars_opt_pos.rds')
 # for position
 
 # Now run each comparison again with the other factor levels set to the winner for that factor
-resp_update_pars <- c("R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "RA", "RB", "RC", "RD")
+resp_update_pars <- c("R0", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "RA", "RB", "RC", "RD", "RE")
 color_update_pars <- c("C3")
 position_update_pars <- c("P4")
 
