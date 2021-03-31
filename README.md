@@ -7,6 +7,7 @@ __Inter-trial effects in priming of pop-out: Comparison of Bayesian updating mod
 * Fredrik Allenmark<sup>1</sup>
 * Ahu Gokce<sup>2</sup>
 * Thomas Geyer<sup>1</sup>
+* Artyom Zinchenko<sup>1</sup>
 * Hermann J. Müller<sup>1</sup>
 * Zhuanghua Shi<sup>1</sup>
 
