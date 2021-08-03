@@ -31,3 +31,5 @@ The file factorial_Models.R runs the model comparison.
 The file models_analysis.R creates figures of relative AIC, temporal profiles of the inter-trial effects and model predictions as well as examples of the updating process for the updating rules of the best model. This uses the results saved by running factorial_Models.R.
 
 The files bayesian_updates.R and figure_functions.R contains various functions that are required by the model comparison, e.g. implementations of the different updating rules, and/or in order to create the figures.
+
+The file crossvalidation.R runs the cross-validation.
